@@ -86,7 +86,18 @@ gsutil setmeta ...
 
 
 
-### Pipeline 02: Functions + CRON
+### Pipeline 02: Functions
+
+See projects
+```bash
+gcloud functions list --gen2 --regions=us-central1
+gcloud functions list --regions=us-central1
+```
+
+
 
 
 ## Amazon Web Services
+
+Storage
+`s3://` for cloud AWS S3 storage
