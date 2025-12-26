@@ -1,3 +1,7 @@
+# Bash
+
+
+
 # Cloud Command Workflows
 
 ## Google Cloud Platform
@@ -5,7 +9,9 @@
 See project I am in:
 
 ```bash
+gcloud config list
 gcloud config get-value project
+gcloud config configurations list
 ```
 
 
