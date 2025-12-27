@@ -163,7 +163,59 @@ gcloud projects add-iam-policy-binding ita-development-project \
   --role="roles/run.invoker"
 ```
 
+Add the bindings...
+
+```bash
+gcloud functions add-invoker-policy-binding fetch_bizjournals \
+  --gen2 \
+  --region=us-central1 \
+  --member="serviceAccount:${SA_SCHED_EMAIL}"
+```
+Note: this is newer (and there is also a fefault)
+
+To check,
+```bash
+gcloud run services get-iam-policy fetch-bizjournals \
+  --region=us-central1
+```
+Note: look for `role: roles/run.invoker`
+
 Let Cloud Scheduler mint tokens as that SA (important)
+
+New
+```bash
+PROJECT_ID="ita-development-project"
+PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
+
+# Cloud Scheduler service agent (Google-managed)
+SCHED_AGENT="service-${PROJECT_NUMBER}@gcp-sa-cloudscheduler.iam.gserviceaccount.com"
+
+# The service account that Scheduler will impersonate when calling the function
+SA_SCHED_EMAIL="bizjournals-rss-scheduler@${PROJECT_ID}.iam.gserviceaccount.com"
+
+gcloud iam service-accounts add-iam-policy-binding \
+  "$SA_SCHED_EMAIL" \
+  --member="serviceAccount:${SCHED_AGENT}" \
+  --role="roles/iam.serviceAccountTokenCreator"
+```
+
+Rollback
+```bash
+PROJECT_ID="ita-development-project"
+PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
+
+SCHED_AGENT="service-${PROJECT_NUMBER}@gcp-sa-cloudscheduler.iam.gserviceaccount.com"
+SA_SCHED_EMAIL="guardian-rss-scheduler@${PROJECT_ID}.iam.gserviceaccount.com"
+
+gcloud iam service-accounts remove-iam-policy-binding \
+  "$SA_SCHED_EMAIL" \
+  --member="serviceAccount:${SCHED_AGENT}" \
+  --role="roles/iam.serviceAccountTokenCreator"
+
+```
+
+
+
 ```bash
 PROJECT_ID="ita-development-project"
 PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
@@ -218,17 +270,28 @@ curl -i "$FUNCTION_URL"
 ```
 Notes: `curl` is the http request (get by defult), `-s` is silent, `-H` is header, `-i` is to include the response headers
 
+### Mint Auth Tokens
+
+```bash
+TOKEN="$(gcloud auth print-identity-token --audiences="$FUNCTION_URL")"
+
+curl -i -v \
+  -A "bj-rss-ingestor/1.0" \
+  -H "Authorization: Bearer $TOKEN" \
+  "$FUNCTION_URL"
+```
+
 ### Scheduler
 
 Create:
 ```bash
-gcloud scheduler jobs create http wsj-rss-every-2h \
+gcloud scheduler jobs create http bizjournal-rss-every-2h \
   --location=us-central1 \
   --schedule="0 */2 * * *" \
   --time-zone="Etc/UTC" \
   --uri="$FUNCTION_URL" \
   --http-method=GET \
-  --oidc-service-account-email="wsj-rss-scheduler@ita-development-project.iam.gserviceaccount.com"
+  --oidc-service-account-email="${SA_SCHED_EMAIL}"
 ```
 
 Verify:
@@ -267,10 +330,20 @@ gcloud storage cp -r \
 
 ### Logs
 
-Examlple
+Example for Cloud Run (Cloud Functions runs on Cloud Run in 2.0)
 ```bash
-gcloud functions logs read fetch_wsj --gen2 --region us-central1 --limit 200
+gcloud run services logs read fetch-bizjournals \
+  --region=us-central1 \
+  --limit=50
+```
 
+Example for Cloud Functions
+```bash
+gcloud functions logs read fetch-bizjournals --gen2 --region us-central1 --limit 50
+```
+
+This is obsolete:
+```bash
 gcloud logging read \
   'resource.type="cloud_run_revision" AND resource.labels.service_name="fetch_wsj"' \
   --limit=200 \
@@ -278,6 +351,7 @@ gcloud logging read \
   --format="value(timestamp,textPayload)" \
   | tail -n 50
 ```
+
 
 
 
