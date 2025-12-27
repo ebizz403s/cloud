@@ -194,7 +194,7 @@ gcloud functions deploy ${FUNCTION_NAME} \
   --source=. \
   --trigger-http \
   --no-allow-unauthenticated \
-  --service-account="SA_RUN_EMAIL" \
+  --service-account="${SA_RUN_EMAIL}" \
   --max-instances=1 \
   --timeout=60s \
   --set-env-vars="BUCKET_NAME=${BUCKET_NAME},BASE_PREFIX=rss-landing"
@@ -202,8 +202,13 @@ gcloud functions deploy ${FUNCTION_NAME} \
 
 Get the function URL:
 ```bash
-FUNCTION_URL="$(gcloud functions describe fetch_wsj --gen2 --region=us-central1 --format='value(serviceConfig.uri)')"
+FUNCTION_URL="$(gcloud functions describe "${FUNCTION_NAME}" \
+  --gen2 \
+  --region=us-central1 \
+  --format='value(serviceConfig.uri)')"
+
 echo "$FUNCTION_URL"
+
 ```
 
 Test and evoke the function manually:
