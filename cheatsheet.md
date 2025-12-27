@@ -300,6 +300,21 @@ gcloud scheduler jobs describe wsj-rss-every-2h --location=us-central1 \
   --format="yaml(name,schedule,timeZone,httpTarget.uri,httpTarget.oidcToken.serviceAccountEmail)"
 ```
 
+Update:
+```bash
+gcloud scheduler jobs update http rss-prnewswire-5m \
+  --location=us-central1 \
+  --schedule="0 * * * *" \
+  --time-zone="America/New_York"
+```
+
+Logs:
+```
+gcloud run services logs read fetch-prnewswire \
+  --region=us-central1 \
+  --freshness=60m
+```
+
 Trigger:
 ```bash
 gcloud scheduler jobs run wsj-rss-every-2h --location=us-central1
