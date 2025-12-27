@@ -8,7 +8,8 @@ FUNCTION_NAME="fetch_wsj"
 SERVICE_NAME_INGESTOR="WSJ RSS ingestor"
 SERVICE_NAME_SCHEDULER="WSJ RSS scheduler"
 BUCKET_NAME="ita-wsj-rss-jsonl-bucket"
-BASE_PREFIX="rss-landing/source=wsj"
+BASE_PREFIX="rss-landing"
+PREFIX="rss-landing/source=bizjournals"
 ```
 Note: some commands interchange `REGION` and `LOCATION`
 
@@ -79,11 +80,11 @@ Note: `-k2,2` means `-k defines a key, switch into key-parsing mode`, `start`, `
 ### Create and View Bucket
 
 ```bash
-gcloud config set project YOUR_PROJECT_ID
-gcloud storage buckets create gs://ita-wsj-rss-jsonl-bucket \
+gcloud config set project ${PROJECT_ID}
+gcloud storage buckets create gs://${BUCKET_NAME} \
   --location=us-central1 \
   --uniform-bucket-level-access
-gcloud storage buckets list --filter="name:ita-wsj-rss-jsonl-bucket"
+gcloud storage buckets list --filter="name:${BUCKET_NAME}"
 ```
 
 ### Storage Utility v. gcloud
@@ -115,39 +116,62 @@ Typically, there are two service accounts:
 Your function runs “as” this account. If it needs to write JSONL files into your bucket, you grant it something like:
 `roles/storage.objectAdmin` on that bucket.
 
+#### Create Runtime SA (the function uses this identity to write to GCS):
+
+```bash
+SA_RUN="bizjournals-rss-ingestor"
+gcloud iam service-accounts create "$SA_RUN" \
+  --display-name="Bizjournals RSS ingestor"
+```
+
 #### Caller service account (Scheduler’s identity)
 
 Cloud Scheduler calls your HTTP function using OIDC (a signed identity token). That service account needs permission to invoke the function:
 `roles/run.invoker` (for Gen2 functions, because they run on Cloud Run).
+
+### Creating a Scheduler SA (Cloud Scheduler uses this identity to call your function with OIDC):
+
+```bash
+SA_SCHED="bizjournals-rss-scheduler"
+gcloud iam service-accounts create "$SA_SCHED" \
+  --display-name="Bizjournals RSS scheduler"
+```
 
 See service accounts:
 ```bash
 gcloud iam service-accounts list
 ```
 
+Save emails for permissions
+```bash
+SA_RUN_EMAIL="${SA_RUN}@${PROJECT_ID}.iam.gserviceaccount.com"
+SA_SCHED_EMAIL="${SA_SCHED}@${PROJECT_ID}.iam.gserviceaccount.com"
+```
+
 Establish service accounts:
 Runtime function SA can write to the bucket, 
 ```bash
-gcloud storage buckets add-iam-policy-binding gs://ita-wsj-rss-jsonl-bucket \
-  --member="serviceAccount:wsj-rss-ingestor@ita-development-project.iam.gserviceaccount.com" \
+gcloud storage buckets add-iam-policy-binding gs://${BUCKET_NAME} \
+  --member="serviceAccount:${SA_RUN_EMAIL}" \
   --role="roles/storage.objectAdmin"
 ```
 
 Scheduler SA can invoke the Gen2 function (Cloud Run invoker), 
 ```bash
 gcloud projects add-iam-policy-binding ita-development-project \
-  --member="serviceAccount:wsj-rss-scheduler@ita-development-project.iam.gserviceaccount.com" \
+  --member="serviceAccount:${SA_SCHED_EMAIL}" \
   --role="roles/run.invoker"
 ```
 
-Scheduler SA can invoke the Gen2 function (Cloud Run invoker)
+Let Cloud Scheduler mint tokens as that SA (important)
 ```bash
 PROJECT_ID="ita-development-project"
 PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
 SCHED_AGENT="service-${PROJECT_NUMBER}@gcp-sa-cloudscheduler.iam.gserviceaccount.com"
 
+
 gcloud iam service-accounts add-iam-policy-binding \
-  wsj-rss-scheduler@ita-development-project.iam.gserviceaccount.com \
+  ${SA_SCHED_EMAIL} \
   --member="serviceAccount:${SCHED_AGENT}" \
   --role="roles/iam.serviceAccountTokenCreator"
 ```
@@ -162,18 +186,18 @@ gsutil setmeta ...
 
 Deploy the Gen2 Cloud Function:
 ```bash
-gcloud functions deploy fetch_wsj \
+gcloud functions deploy ${FUNCTION_NAME} \
   --gen2 \
   --region=us-central1 \
   --runtime=python311 \
-  --entry-point=fetch_wsj \
+  --entry-point=${FUNCTION_NAME} \
   --source=. \
   --trigger-http \
   --no-allow-unauthenticated \
-  --service-account="wsj-rss-ingestor@ita-development-project.iam.gserviceaccount.com" \
+  --service-account="SA_RUN_EMAIL" \
   --max-instances=1 \
-  --timeout=540s \
-  --set-env-vars="BUCKET_NAME=ita-wsj-rss-jsonl-bucket,BASE_PREFIX=rss-landing,DEDUP_FILES=50,DEDUP_GUIDS=10000,USER_AGENT=ita-wsj-rss-ingestor/1.0"
+  --timeout=60s \
+  --set-env-vars="BUCKET_NAME=${BUCKET_NAME},BASE_PREFIX=rss-landing"
 ```
 
 Get the function URL:
